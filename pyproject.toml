@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-telegram-work-bot"
+version = "0.1.0"
+description = "Telegram work-chat bot that tracks promises, assignments, and Codex-readable notes."
+requires-python = ">=3.9"
+dependencies = [
+  "aiogram>=3.4,<4",
+  "aiohttp>=3.9,<3.13",
+  "google-api-python-client>=2.129,<3",
+  "google-auth>=2.29,<3",
+  "matplotlib>=3.8,<4",
+  "python-dotenv>=1.0,<2",
+]
+
+[project.scripts]
+codex-tg-bot = "codex_tg_bot.app:main"
+codex-tg-pending = "codex_tg_bot.bridge:pending_main"
+codex-tg-reply = "codex_tg_bot.bridge:reply_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

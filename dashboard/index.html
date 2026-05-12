@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Telegram Work Map</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="title-cluster">
+          <p class="eyebrow">Telegram bot live view</p>
+          <div class="title-line">
+            <h1>Карта задач и обещаний</h1>
+            <div class="header-metrics" aria-label="Сводка">
+              <button class="metric-button" type="button" data-open-people title="Открыть справочник людей">
+                <span class="metric-button__icon">Л</span>
+                <strong id="peopleCount">0</strong>
+                <span>люди</span>
+              </button>
+              <div class="metric-button" title="Открытые задачи">
+                <span class="metric-button__icon">З</span>
+                <strong id="assignedCount">0</strong>
+                <span>задачи</span>
+              </div>
+              <div class="metric-button metric-button--accent" title="Мои обещания">
+                <span class="metric-button__icon">Я</span>
+                <strong id="myPromisesCount">0</strong>
+                <span>обещал</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <a class="back-link" href="/">← Назад</a>
+          <div class="status" aria-live="polite">
+            <span class="pulse"></span>
+            <span id="statusText">Загружаю данные...</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="promise-focus" aria-label="Мои обещания">
+        <section class="panel" aria-labelledby="myPromisesTitle">
+          <div class="panel__head">
+            <div>
+              <p class="eyebrow">Моя зона</p>
+              <h2 id="myPromisesTitle">Что обещал я и кому</h2>
+            </div>
+          </div>
+          <div class="task-list" id="myPromisesList"></div>
+        </section>
+      </section>
+
+      <section class="board-layout">
+        <section class="panel panel--wide" aria-labelledby="assignmentsTitle">
+          <div class="panel__head">
+            <div>
+              <p class="eyebrow">Кому что поручено</p>
+              <h2 id="assignmentsTitle">Пользователи и задачи</h2>
+            </div>
+          </div>
+          <div class="people-board" id="assignmentsBoard"></div>
+        </section>
+      </section>
+    </main>
+
+    <dialog class="people-dialog" id="peopleDialog" aria-labelledby="peopleDialogTitle">
+      <section class="panel people-dialog__panel">
+        <div class="panel__head">
+          <div>
+            <p class="eyebrow">Справочник</p>
+            <h2 id="peopleDialogTitle">Люди</h2>
+          </div>
+          <button class="edit-button" type="button" id="peopleDialogClose" title="Закрыть">×</button>
+        </div>
+        <div class="people-list" id="peopleList"></div>
+      </section>
+    </dialog>
+
+    <template id="emptyTemplate">
+      <div class="empty">
+        <strong>Пока пусто</strong>
+        <span>Новые данные появятся здесь автоматически после сообщений в Telegram.</span>
+      </div>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

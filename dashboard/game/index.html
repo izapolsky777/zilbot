@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contra Popki</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="top-nav">
+        <button id="global-back-button" class="back-link" type="button">
+          ← К проектам
+        </button>
+      </div>
+
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Локальный браузерный прототип</p>
+          <h1>Contra Popki</h1>
+          <p class="subtitle">
+            Боец бежит без остановки, прыгает и отстреливает попков. Чем дольше
+            выживаешь, тем больше очков и выше место в таблице.
+          </p>
+        </div>
+        <div class="controls-card">
+          <h2>Управление</h2>
+          <p><kbd>↑</kbd> — прыжок</p>
+          <p><kbd>Space</kbd> — выстрел</p>
+          <p><kbd>R</kbd> — рестарт после поражения</p>
+        </div>
+      </header>
+
+      <main class="game-layout">
+        <section class="game-panel">
+          <div class="hud">
+            <div class="hud-item">
+              <span>Очки</span>
+              <strong id="score">0</strong>
+            </div>
+            <div class="hud-item">
+              <span>Рекорд</span>
+              <strong id="best-score">0</strong>
+            </div>
+            <div class="hud-item">
+              <span>Уничтожено</span>
+              <strong id="kills">0</strong>
+            </div>
+          </div>
+
+          <div class="canvas-frame">
+            <canvas
+              id="game"
+              width="960"
+              height="540"
+              aria-label="Contra Popki game canvas"
+            ></canvas>
+
+            <div id="overlay" class="overlay">
+              <section id="menu-screen" class="overlay-screen">
+                <div class="overlay-card menu-card">
+                  <p class="overlay-label">8-bit side run</p>
+                  <h2>Contra Popki</h2>
+                  <p class="menu-copy">
+                    Врывайся в забег против попков. Нажми старт, чтобы разблокировать звук и
+                    начать игру.
+                  </p>
+                  <div class="menu-actions">
+                    <button id="start-button" type="button">Старт</button>
+                  </div>
+                </div>
+              </section>
+
+              <section id="gameover-screen" class="overlay-screen hidden">
+                <div class="overlay-card results-card">
+                  <p class="overlay-label">Забег окончен</p>
+                  <h2 id="final-title">Новый заход?</h2>
+                  <p id="final-score-line">Ваш счет: 0</p>
+
+                  <form id="save-form" class="save-form">
+                    <label for="player-name">Имя в лидерборде</label>
+                    <div class="save-row">
+                      <input
+                        id="player-name"
+                        name="playerName"
+                        type="text"
+                        maxlength="18"
+                        placeholder="Боец"
+                      />
+                      <button type="submit">Сохранить</button>
+                    </div>
+                  </form>
+                  <p id="leaderboard-sync" class="sync-note">Синхронизация...</p>
+
+                  <div class="results-board">
+                    <div class="results-board-head">
+                      <span class="results-board-label">Актуальный лидерборд</span>
+                      <strong>Топ 5+</strong>
+                    </div>
+                    <div class="leaderboard-scroll">
+                      <ol id="overlay-leaderboard" class="overlay-leaderboard"></ol>
+                    </div>
+                  </div>
+
+                  <div class="stacked-actions">
+                    <button id="restart-button" class="secondary-button" type="button">
+                      Новый забег
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <div class="touch-controls" aria-label="Мобильное управление">
+            <button id="touch-jump" class="touch-button touch-jump" type="button">
+              JUMP
+            </button>
+            <button id="touch-fire" class="touch-button touch-fire" type="button">
+              FIRE
+            </button>
+          </div>
+        </section>
+
+        <aside class="leaderboard-panel">
+          <div class="leaderboard-card">
+            <h2>Как играть</h2>
+            <p>Игра стартует только из меню по кнопке <strong>Старт</strong>.</p>
+            <p>Во время забега: прыжок на <kbd>↑</kbd>, выстрел на <kbd>Space</kbd>.</p>
+            <p id="inline-sync-note" class="sync-note">Синхронизация...</p>
+          </div>
+
+          <div class="notes-card">
+            <h2>Что внутри</h2>
+            <p>Максимально простая графика: неон, пиксельные полосы и враги-попки из примитивных фигур.</p>
+            <p>Добавлены 8-битные звуки выстрела, прыжка, попадания и простой чиптюн-фон во время забега.</p>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./game.js"></script>
+  </body>
+</html>

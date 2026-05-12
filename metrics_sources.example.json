@@ -1,0 +1,30 @@
+{
+  "sources": [
+    {
+      "name": "Беларусь Supply",
+      "spreadsheet_id": "1pMp4W1W4bz1b3QLq-HID-LzlLgm8KsD7S5Kl6fgAW2Q",
+      "sheets": [
+        {
+          "name": "Актуальный план",
+          "kind": "wide",
+          "range": "A1:AR1003"
+        },
+        {
+          "name": "Прогнозы",
+          "kind": "table",
+          "range": "A1:AE1000"
+        },
+        {
+          "name": "Контрагенты",
+          "kind": "table",
+          "range": "A1:AC1002"
+        },
+        {
+          "name": "Прозвон таксопарков",
+          "kind": "notes",
+          "range": "A1:AA1000"
+        }
+      ]
+    }
+  ]
+}
