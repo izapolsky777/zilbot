@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Metrics Hub</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Telegram bot analytics</p>
+          <h1>Metrics Hub</h1>
+        </div>
+        <div class="topbar-actions">
+          <a class="back-link" href="/">← Портал</a>
+          <a class="back-link" href="/dashboard/">Задачи</a>
+        </div>
+      </header>
+
+      <section class="status-grid" aria-label="Статус метрик">
+        <article class="status-card">
+          <span>Источники</span>
+          <strong id="sourceCount">0</strong>
+        </article>
+        <article class="status-card">
+          <span>Google API</span>
+          <strong id="apiStatus">...</strong>
+        </article>
+        <article class="status-card">
+          <span>Кэш</span>
+          <strong id="cacheTtl">...</strong>
+        </article>
+      </section>
+
+      <section class="top-insights" aria-label="Операционные метрики">
+        <article class="insight-card insight-card--planfact">
+          <div class="insight-head">
+            <div>
+              <p class="eyebrow">Trips plan/fact</p>
+              <h2>План-факт по поездкам</h2>
+            </div>
+            <span class="badge">план vs выполнено</span>
+          </div>
+          <div class="line-chart line-chart--wide" id="planFactTripsChart"></div>
+        </article>
+
+        <article class="traffic-card">
+          <span>Водители с трафиком</span>
+          <strong>297</strong>
+          <em>84% от active SH</em>
+        </article>
+      </section>
+
+      <section class="preview-grid" aria-label="Бизнес-превью">
+        <article class="insight-card insight-card--wide">
+          <div class="insight-head">
+            <div>
+              <p class="eyebrow">Supply funnel</p>
+              <h2>Capacity → заведено → supply</h2>
+            </div>
+            <span class="badge">Беларусь Supply</span>
+          </div>
+          <div class="kpi-row">
+            <div>
+              <span>Capacity парков</span>
+              <strong>1 618</strong>
+              <em>водителей</em>
+            </div>
+            <div>
+              <span>В системе</span>
+              <strong>718</strong>
+              <em>44% от capacity</em>
+            </div>
+            <div>
+              <span>Supply hours</span>
+              <strong>353</strong>
+              <em>активные SH</em>
+            </div>
+            <div>
+              <span>Gap</span>
+              <strong>900</strong>
+              <em>потенциал к добору</em>
+            </div>
+          </div>
+          <div class="funnel-chart" id="funnelChart"></div>
+        </article>
+
+        <article class="insight-card">
+          <div class="insight-head">
+            <div>
+              <p class="eyebrow">Driver trend</p>
+              <h2>Водители в динамике</h2>
+            </div>
+          </div>
+          <div class="line-chart" id="driverChart"></div>
+        </article>
+
+        <article class="insight-card">
+          <div class="insight-head">
+            <div>
+              <p class="eyebrow">Trips</p>
+              <h2>Supply → поездки</h2>
+            </div>
+          </div>
+          <div class="line-chart" id="tripsChart"></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Парки</p>
+            <h2>Потенциал и факт по таксопаркам</h2>
+          </div>
+          <span class="badge">сортировка по незакрытому потенциалу</span>
+        </div>
+        <div class="park-list" id="parkList"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Подключено сейчас</p>
+            <h2>Google Sheets источники</h2>
+          </div>
+          <button class="refresh-button" type="button" id="refreshButton">Обновить</button>
+        </div>
+        <div class="source-list" id="sourceList"></div>
+      </section>
+
+      <section class="panel panel--compact">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Как спрашивать</p>
+            <h2>Примеры запросов в Telegram</h2>
+          </div>
+        </div>
+        <div class="prompt-grid">
+          <span>Сколько поездок на 12 мая?</span>
+          <span>Покажи график активных водителей.</span>
+          <span>Какой план/факт по НикВаТакс?</span>
+          <span>Что по прозвону Хаукастера?</span>
+        </div>
+      </section>
+    </main>
+
+    <template id="emptyTemplate">
+      <div class="empty">Источники пока не настроены.</div>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -75,7 +75,7 @@ h1 {
 
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
 }
 
@@ -109,6 +109,19 @@ h1 {
   background:
     linear-gradient(180deg, rgba(255, 181, 94, 0.1), rgba(255, 181, 94, 0.03)),
     rgba(255, 255, 255, 0.02);
+}
+
+.project-card--metrics {
+  background:
+    linear-gradient(180deg, rgba(150, 204, 255, 0.12), rgba(150, 204, 255, 0.03)),
+    rgba(255, 255, 255, 0.02);
+}
+
+.project-card--metrics:hover {
+  border-color: rgba(150, 204, 255, 0.48);
+  background:
+    linear-gradient(180deg, rgba(150, 204, 255, 0.18), rgba(150, 204, 255, 0.05)),
+    rgba(255, 255, 255, 0.03);
 }
 
 .project-card--game:hover {

@@ -28,6 +28,7 @@ class Config:
     daily_digest_timezone: str
     google_service_account_file: Optional[Path]
     metrics_sources_path: Path
+    metrics_cache_path: Path
     metrics_cache_ttl_seconds: int
     metrics_chart_dir: Path
 
@@ -63,6 +64,7 @@ def load_config() -> Config:
         daily_digest_timezone=os.getenv("DAILY_DIGEST_TIMEZONE", "Europe/Moscow").strip() or "Europe/Moscow",
         google_service_account_file=Path(google_service_account_file) if google_service_account_file else None,
         metrics_sources_path=Path(os.getenv("METRICS_SOURCES_PATH", "data/metrics_sources.json")),
+        metrics_cache_path=Path(os.getenv("METRICS_CACHE_PATH", "data/metrics_cache.json")),
         metrics_cache_ttl_seconds=int(os.getenv("METRICS_CACHE_TTL_SECONDS", "300").strip() or "300"),
         metrics_chart_dir=Path(os.getenv("METRICS_CHART_DIR", "data/metric_charts")),
     )

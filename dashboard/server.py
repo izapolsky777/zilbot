@@ -13,11 +13,27 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_ROOT = ROOT / "dashboard"
 GAME_ROOT = DASHBOARD_ROOT / "game"
+METRICS_ROOT = DASHBOARD_ROOT / "metrics"
 PORTAL_FILE = DASHBOARD_ROOT / "portal.html"
 DATABASE_PATH = ROOT / os.getenv("DATABASE_PATH", "data/bot.sqlite3")
+METRICS_SOURCES_PATH = ROOT / os.getenv("METRICS_SOURCES_PATH", "data/metrics_sources.json")
+METRICS_CACHE_PATH = ROOT / os.getenv("METRICS_CACHE_PATH", "data/metrics_cache.json")
+GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
 HOST = os.getenv("DASHBOARD_HOST", "127.0.0.1")
 PORT = int(os.getenv("DASHBOARD_PORT", "8765"))
 GAME_LEADERBOARD_LIMIT = 20
+DEFAULT_METRICS_SOURCES = [
+    {
+        "name": "Беларусь Supply",
+        "spreadsheet_id": "1pMp4W1W4bz1b3QLq-HID-LzlLgm8KsD7S5Kl6fgAW2Q",
+        "sheets": [
+            {"name": "Актуальный план", "kind": "wide", "range": "A1:AR1003"},
+            {"name": "Прогнозы", "kind": "table", "range": "A1:AE1000"},
+            {"name": "Контрагенты", "kind": "table", "range": "A1:AC1002"},
+            {"name": "Прозвон таксопарков", "kind": "notes", "range": "A1:AA1000"},
+        ],
+    }
+]
 MENTION_RE = re.compile(r"(?<!\w)@([A-Za-z0-9_]{3,32})")
 DUE_PATTERNS = [
     re.compile(r"\b(сегодня|завтра|послезавтра)\b", re.I),
@@ -45,6 +61,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/game/api/leaderboard":
             self._send_json({"entries": load_game_leaderboard()}, head_only=head_only)
             return
+        if parsed.path == "/metrics/api/status":
+            self._send_json(load_metrics_status(), head_only=head_only)
+            return
 
         if parsed.path in {"", "/", "/index.html"}:
             self._serve_file(PORTAL_FILE, head_only=head_only)
@@ -56,6 +75,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/game":
             self._redirect("/game/", head_only=head_only)
+            return
+        if parsed.path == "/metrics":
+            self._redirect("/metrics/", head_only=head_only)
             return
 
         if parsed.path == "/dashboard/":
@@ -72,6 +94,14 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
         if parsed.path.startswith("/game/"):
             self._serve_from_root(GAME_ROOT, parsed.path.removeprefix("/game/"), head_only=head_only)
+            return
+
+        if parsed.path == "/metrics/":
+            self._serve_file(METRICS_ROOT / "index.html", head_only=head_only)
+            return
+
+        if parsed.path.startswith("/metrics/"):
+            self._serve_from_root(METRICS_ROOT, parsed.path.removeprefix("/metrics/"), head_only=head_only)
             return
 
         self.send_error(404, "Page not found")
@@ -228,6 +258,41 @@ def load_items(limit: int = 100) -> dict:
         "archived_items": archived_items,
         "people": people_from_items(items, aliases),
     }
+
+
+def load_metrics_status() -> dict:
+    sources = load_metrics_sources()
+    service_account_path = ROOT / GOOGLE_SERVICE_ACCOUNT_FILE if GOOGLE_SERVICE_ACCOUNT_FILE else None
+    return {
+        "sources": sources,
+        "sources_path": str(METRICS_SOURCES_PATH),
+        "sources_file_exists": METRICS_SOURCES_PATH.exists(),
+        "cache_path": str(METRICS_CACHE_PATH),
+        "cache_file_exists": METRICS_CACHE_PATH.exists(),
+        "cache_file_age_seconds": cache_file_age_seconds(METRICS_CACHE_PATH),
+        "service_account_configured": bool(GOOGLE_SERVICE_ACCOUNT_FILE),
+        "service_account_file_exists": bool(service_account_path and service_account_path.exists()),
+        "cache_ttl_seconds": int(os.getenv("METRICS_CACHE_TTL_SECONDS", "300").strip() or "300"),
+        "chart_dir": str(ROOT / os.getenv("METRICS_CHART_DIR", "data/metric_charts")),
+    }
+
+
+def load_metrics_sources() -> list[dict[str, Any]]:
+    if not METRICS_SOURCES_PATH.exists():
+        return DEFAULT_METRICS_SOURCES
+    try:
+        data = json.loads(METRICS_SOURCES_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return DEFAULT_METRICS_SOURCES
+    if isinstance(data, dict):
+        data = data.get("sources", [])
+    return data if isinstance(data, list) and data else DEFAULT_METRICS_SOURCES
+
+
+def cache_file_age_seconds(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    return round(__import__("time").time() - path.stat().st_mtime)
 
 
 def load_game_leaderboard(limit: int = GAME_LEADERBOARD_LIMIT) -> list[dict[str, Any]]:

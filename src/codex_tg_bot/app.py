@@ -96,6 +96,29 @@ def register_handlers(dispatcher: Dispatcher, store: Store, config: Config, bot:
 
         await _safe_answer(bot, message, _format_today_digest(store, config, _digest_now(config).date()))
 
+    @dispatcher.message(Command("metrics"))
+    async def metrics(message: Message) -> None:
+        if not _is_owner(message, config):
+            await _safe_answer(bot, message, "Эта команда доступна только владельцу бота.")
+            return
+
+        await _safe_answer(
+            bot,
+            message,
+            "\n".join(
+                [
+                    "Раздел метрик активен.",
+                    "",
+                    "Пиши или диктуй вопросы по Google Sheets:",
+                    "1. Сколько поездок на 12 мая?",
+                    "2. Покажи график активных водителей.",
+                    "3. Какой план/факт по НикВаТакс?",
+                    "",
+                    "Текущий источник: Беларусь Supply.",
+                ]
+            ),
+        )
+
     @dispatcher.message(Command("remind"))
     async def remind(message: Message) -> None:
         if not _is_owner(message, config):

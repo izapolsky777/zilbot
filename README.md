@@ -12,6 +12,7 @@ Telegram bot for work chats: watches group messages, recognizes tasks/promises, 
   - `/whoami` shows your Telegram id.
   - `/digest` shows recent promises and assignments.
   - `/tasks` shows open tasks.
+  - `/metrics` shows examples for the dedicated metrics mode.
   - `/remind <task id>` sends a reminder into the original chat.
 - Turns private messages from the owner into Codex requests.
 - Turns private voice messages from the owner into Codex requests after speech-to-text transcription.
@@ -59,7 +60,7 @@ The bot can answer private questions like:
 Какой план/факт по НикВаТакс?
 ```
 
-Production access uses the Google Sheets API with a service account. Do not put a Google email password into the bot.
+Production answers use a local cache file. A separate sync job can refresh that cache from Google Sheets and push it to the server, so the Telegram bot does not need a Google password.
 
 1. Create a Google Cloud service account and JSON key.
 2. Enable Google Sheets API for the project.
@@ -70,10 +71,23 @@ Production access uses the Google Sheets API with a service account. Do not put 
 ```bash
 GOOGLE_SERVICE_ACCOUNT_FILE=data/google-service-account.json
 METRICS_SOURCES_PATH=data/metrics_sources.json
+METRICS_CACHE_PATH=data/metrics_cache.json
 METRICS_CHART_DIR=data/metric_charts
 ```
 
-The current default source is the “Беларусь Supply” spreadsheet. To override or add more sources, copy `metrics_sources.example.json` to `data/metrics_sources.json` and edit sheet names, ranges, or spreadsheet ids.
+The current default source is the “Беларусь Supply” spreadsheet. To override or add more sources, copy `metrics_sources.example.json` to `data/metrics_sources.json` and edit sheet names, ranges, or spreadsheet ids. The cache format is `data/metrics_cache.json`; it contains sheet values copied from Google Sheets.
+
+After a sync job updates `data/metrics_cache.json`, push it to the VPS:
+
+```bash
+./scripts/push_metrics_cache_to_vps.sh
+```
+
+The portal also has a separate Metrics Hub at:
+
+```text
+http://localhost:8765/metrics/
+```
 
 Run:
 

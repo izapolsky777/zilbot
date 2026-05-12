@@ -94,13 +94,25 @@ async def answer_metrics_request(config: Config, request_text: str) -> MetricsAn
 
 
 async def load_metrics_dataset(config: Config) -> MetricsDataset:
-    cache_key = str(config.metrics_sources_path.resolve())
+    cache_key = str(config.metrics_cache_path.resolve())
     cached = _CACHE.get(cache_key)
     if cached and time.time() - cached[0] < config.metrics_cache_ttl_seconds:
         return cached[1]
 
     sources = _load_sources(config.metrics_sources_path)
-    values_by_range = await _read_google_sheet_values(config, sources)
+    values_by_range = _read_metrics_cache_file(config.metrics_cache_path)
+    if not values_by_range:
+        values_by_range = await _read_google_sheet_values(config, sources)
+        _write_metrics_cache_file(config.metrics_cache_path, sources, values_by_range)
+    dataset = _dataset_from_values(sources, values_by_range)
+    _CACHE[cache_key] = (time.time(), dataset)
+    return dataset
+
+
+def _dataset_from_values(
+    sources: list[dict[str, Any]],
+    values_by_range: dict[tuple[str, str], list[list[str]]],
+) -> MetricsDataset:
     series: list[MetricSeries] = []
     tables: list[TableSheet] = []
     title = ", ".join(source.get("name", "Google Sheet") for source in sources)
@@ -120,9 +132,53 @@ async def load_metrics_dataset(config: Config) -> MetricsDataset:
                 if table.rows:
                     tables.append(table)
 
-    dataset = MetricsDataset(title=title, loaded_at=time.time(), series=tuple(series), tables=tuple(tables))
+    return MetricsDataset(title=title, loaded_at=time.time(), series=tuple(series), tables=tuple(tables))
+
+
+async def refresh_metrics_cache(config: Config) -> MetricsDataset:
+    cache_key = str(config.metrics_cache_path.resolve())
+    _CACHE.pop(cache_key, None)
+    sources = _load_sources(config.metrics_sources_path)
+    values_by_range = await _read_google_sheet_values(config, sources)
+    _write_metrics_cache_file(config.metrics_cache_path, sources, values_by_range)
+    dataset = _dataset_from_values(sources, values_by_range)
     _CACHE[cache_key] = (time.time(), dataset)
     return dataset
+
+
+def metrics_cache_snapshot(config: Config) -> dict[str, Any]:
+    cache_key = str(config.metrics_cache_path.resolve())
+    cached = _CACHE.get(cache_key)
+    sources = _load_sources(config.metrics_sources_path)
+    cache_file_age = None
+    if config.metrics_cache_path.exists():
+        cache_file_age = round(time.time() - config.metrics_cache_path.stat().st_mtime)
+    snapshot = {
+        "sources": sources,
+        "cache_path": str(config.metrics_cache_path),
+        "cache_file_exists": config.metrics_cache_path.exists(),
+        "cache_file_age_seconds": cache_file_age,
+        "cache_ttl_seconds": config.metrics_cache_ttl_seconds,
+        "service_account_configured": config.google_service_account_file is not None,
+        "service_account_file_exists": bool(
+            config.google_service_account_file and config.google_service_account_file.exists()
+        ),
+        "cached": False,
+        "cached_age_seconds": None,
+        "series_count": 0,
+        "table_count": 0,
+    }
+    if cached:
+        created_at, dataset = cached
+        snapshot.update(
+            {
+                "cached": True,
+                "cached_age_seconds": round(time.time() - created_at),
+                "series_count": len(dataset.series),
+                "table_count": len(dataset.tables),
+            }
+        )
+    return snapshot
 
 
 def build_metrics_context(dataset: MetricsDataset, request_text: str) -> str:
@@ -205,6 +261,49 @@ def _load_sources(path: Path) -> list[dict[str, Any]]:
     if not isinstance(data, list) or not data:
         raise MetricsUnavailable(f"Файл источников метрик пустой или неверного формата: {path}")
     return [source for source in data if isinstance(source, dict)]
+
+
+def _read_metrics_cache_file(path: Path) -> dict[tuple[str, str], list[list[str]]]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    ranges = data.get("ranges", []) if isinstance(data, dict) else []
+    result: dict[tuple[str, str], list[list[str]]] = {}
+    for item in ranges:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source") or "").strip()
+        sheet = str(item.get("sheet") or "").strip()
+        values = item.get("values")
+        if source and sheet and isinstance(values, list):
+            result[(source, sheet)] = values
+    return result
+
+
+def _write_metrics_cache_file(
+    path: Path,
+    sources: list[dict[str, Any]],
+    values_by_range: dict[tuple[str, str], list[list[str]]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": 1,
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "sources": sources,
+        "ranges": [
+            {
+                "source": source,
+                "sheet": sheet,
+                "values": values,
+            }
+            for (source, sheet), values in sorted(values_by_range.items())
+        ],
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 async def _read_google_sheet_values(config: Config, sources: list[dict[str, Any]]) -> dict[tuple[str, str], list[list[str]]]:
