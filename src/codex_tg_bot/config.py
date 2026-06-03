@@ -26,6 +26,10 @@ class Config:
     daily_digest_enabled: bool
     daily_digest_times: Tuple[str, ...]
     daily_digest_timezone: str
+    metrics_daily_digest_enabled: bool
+    metrics_daily_digest_times: Tuple[str, ...]
+    metrics_daily_digest_chat_id: Optional[int]
+    metrics_daily_digest_chat_title: str
     google_service_account_file: Optional[Path]
     metrics_sources_path: Path
     metrics_cache_path: Path
@@ -40,6 +44,7 @@ def load_config() -> Config:
     owner_id = os.getenv("OWNER_TELEGRAM_ID", "").strip()
     openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
     google_service_account_file = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "").strip()
+    metrics_digest_chat_id = os.getenv("METRICS_DAILY_DIGEST_CHAT_ID", "").strip()
 
     return Config(
         telegram_bot_token=token,
@@ -62,6 +67,16 @@ def load_config() -> Config:
             if item.strip()
         ),
         daily_digest_timezone=os.getenv("DAILY_DIGEST_TIMEZONE", "Europe/Moscow").strip() or "Europe/Moscow",
+        metrics_daily_digest_enabled=os.getenv("METRICS_DAILY_DIGEST_ENABLED", "0").strip().lower()
+        in {"1", "true", "yes", "on"},
+        metrics_daily_digest_times=tuple(
+            item.strip()
+            for item in os.getenv("METRICS_DAILY_DIGEST_TIMES", "09:30").split(",")
+            if item.strip()
+        ),
+        metrics_daily_digest_chat_id=int(metrics_digest_chat_id) if metrics_digest_chat_id else None,
+        metrics_daily_digest_chat_title=os.getenv("METRICS_DAILY_DIGEST_CHAT_TITLE", "Статистика").strip()
+        or "Статистика",
         google_service_account_file=Path(google_service_account_file) if google_service_account_file else None,
         metrics_sources_path=Path(os.getenv("METRICS_SOURCES_PATH", "data/metrics_sources.json")),
         metrics_cache_path=Path(os.getenv("METRICS_CACHE_PATH", "data/metrics_cache.json")),

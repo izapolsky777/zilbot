@@ -34,6 +34,12 @@
         </article>
       </section>
 
+      <nav class="country-tabs" aria-label="Страны">
+        <button class="country-tab is-active" type="button" data-country="belarus">Беларусь</button>
+        <button class="country-tab" type="button" data-country="uzbekistan">Узбекистан</button>
+        <button class="country-tab" type="button" data-country="kyrgyzstan">Кыргызстан</button>
+      </nav>
+
       <section class="top-insights" aria-label="Операционные метрики">
         <article class="insight-card insight-card--planfact">
           <div class="insight-head">
@@ -48,8 +54,8 @@
 
         <article class="traffic-card">
           <span>Водители с трафиком</span>
-          <strong>297</strong>
-          <em>84% от active SH</em>
+          <strong id="trafficDrivers">297</strong>
+          <em id="trafficShare">84% от active SH</em>
         </article>
       </section>
 
@@ -60,28 +66,28 @@
               <p class="eyebrow">Supply funnel</p>
               <h2>Capacity → заведено → supply</h2>
             </div>
-            <span class="badge">Беларусь Supply</span>
+            <span class="badge" id="countrySourceBadge">Беларусь Supply</span>
           </div>
           <div class="kpi-row">
             <div>
               <span>Capacity парков</span>
-              <strong>1 618</strong>
+              <strong id="capacityValue">1 618</strong>
               <em>водителей</em>
             </div>
             <div>
               <span>В системе</span>
-              <strong>718</strong>
-              <em>44% от capacity</em>
+              <strong id="registeredValue">718</strong>
+              <em id="registeredShare">44% от capacity</em>
             </div>
             <div>
               <span>Supply hours</span>
-              <strong>353</strong>
+              <strong id="supplyValue">353</strong>
               <em>активные SH</em>
             </div>
             <div>
               <span>Gap</span>
-              <strong>900</strong>
-              <em>потенциал к добору</em>
+              <strong id="gapValue">900</strong>
+              <em id="gapLabel">потенциал к добору</em>
             </div>
           </div>
           <div class="funnel-chart" id="funnelChart"></div>

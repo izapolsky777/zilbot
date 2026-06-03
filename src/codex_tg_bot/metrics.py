@@ -5,6 +5,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ DEFAULT_SPREADSHEET_ID = "1pMp4W1W4bz1b3QLq-HID-LzlLgm8KsD7S5Kl6fgAW2Q"
 DEFAULT_METRICS_SOURCES = [
     {
         "name": "Беларусь Supply",
+        "country": "belarus",
         "spreadsheet_id": DEFAULT_SPREADSHEET_ID,
         "sheets": [
             {"name": "Актуальный план", "kind": "wide", "range": "A1:AR1003"},
@@ -25,7 +27,28 @@ DEFAULT_METRICS_SOURCES = [
             {"name": "Контрагенты", "kind": "table", "range": "A1:AC1002"},
             {"name": "Прозвон таксопарков", "kind": "notes", "range": "A1:AA1000"},
         ],
-    }
+    },
+    {
+        "name": "Кыргызстан Supply",
+        "country": "kyrgyzstan",
+        "spreadsheet_id": "1VtqI0qrPUsEdNkemge-wxdMpjtVfm3Z6I68pqbVuzkA",
+        "sheets": [
+            {"name": "Plan/Fact May", "kind": "wide", "range": "A1:AJ1000"},
+            {"name": "Plan/Fact Apr", "kind": "wide", "range": "A1:BG1000"},
+            {"name": "Парки", "kind": "table", "range": "A1:Z1004"},
+        ],
+    },
+    {
+        "name": "Узбекистан Supply",
+        "country": "uzbekistan",
+        "spreadsheet_id": "1r6nkZfCzbWIrD5dg5pUtgAMvz-8dIYdrZyvRYJesrKk",
+        "sheets": [
+            {"name": "Plan/Fact May", "kind": "wide", "range": "A1:AH1000"},
+            {"name": "Plan/Fact Apr", "kind": "wide", "range": "A1:AH1000"},
+            {"name": "Парки_Подключение", "kind": "table", "range": "A1:Z1000"},
+            {"name": "Парки_Воронка", "kind": "table", "range": "A1:Z1013"},
+        ],
+    },
 ]
 METRICS_INTENT_RE = re.compile(
     r"\b(метрик|метрик[аиу]|цифр|показател|план|факт|прогноз|поездк|заказ|"
@@ -79,6 +102,34 @@ class MetricsDataset:
 class MetricsAnswer:
     text: str
     chart_paths: tuple[Path, ...] = ()
+
+
+@dataclass(frozen=True)
+class DailyMetricsDigest:
+    country: str
+    source: str
+    text: str
+    chart_paths: tuple[Path, ...] = ()
+
+
+@dataclass(frozen=True)
+class DailyMetricPoint:
+    day: date | None
+    label: str
+    value: float
+
+
+@dataclass(frozen=True)
+class DailyCountryMetrics:
+    country: str
+    source: str
+    report_date: date | None
+    plan_trips: tuple[DailyMetricPoint, ...]
+    fact_trips: tuple[DailyMetricPoint, ...]
+    plan_registered: tuple[DailyMetricPoint, ...]
+    fact_registered: tuple[DailyMetricPoint, ...]
+    active_sh: tuple[DailyMetricPoint, ...]
+    active_trips: tuple[DailyMetricPoint, ...]
 
 
 def is_metrics_request(text: str) -> bool:
@@ -249,6 +300,360 @@ def create_metric_charts(config: Config, dataset: MetricsDataset, request_text: 
     fig.savefig(path)
     plt.close(fig)
     return (path,)
+
+
+async def build_daily_metrics_digests(config: Config, report_date: date | None = None) -> tuple[DailyMetricsDigest, ...]:
+    sources = _load_sources(config.metrics_sources_path)
+    values_by_range = _read_metrics_cache_file(config.metrics_cache_path)
+    if not values_by_range:
+        values_by_range = await _read_google_sheet_values(config, sources)
+        _write_metrics_cache_file(config.metrics_cache_path, sources, values_by_range)
+
+    digests: list[DailyMetricsDigest] = []
+    for source in sources:
+        country_metrics = _daily_country_metrics(source, values_by_range, report_date)
+        if country_metrics is None:
+            continue
+        text = _format_daily_country_digest(country_metrics)
+        chart_paths = _create_daily_country_charts(config, country_metrics)
+        digests.append(
+            DailyMetricsDigest(
+                country=country_metrics.country,
+                source=country_metrics.source,
+                text=text,
+                chart_paths=chart_paths,
+            )
+        )
+    return tuple(digests)
+
+
+def _daily_country_metrics(
+    source: dict[str, Any],
+    values_by_range: dict[tuple[str, str], list[list[str]]],
+    report_date: date | None,
+) -> DailyCountryMetrics | None:
+    source_name = str(source.get("name") or "Google Sheet")
+    sheet_name = _preferred_daily_sheet(source)
+    rows = values_by_range.get((source_name, sheet_name), [])
+    if not rows:
+        return None
+
+    series = _extract_daily_series(rows)
+    return DailyCountryMetrics(
+        country=_country_label(source),
+        source=source_name,
+        report_date=report_date,
+        plan_trips=_series_by_key(series, "Клиенты-поездки", "", "Поездки"),
+        fact_trips=_series_by_key(series, "", "Факт Заказы", "заказы выполнены"),
+        plan_registered=_series_by_key(series, "Водители-поездки", "", "Зарегистрированные водители"),
+        fact_registered=_series_by_key(series, "", "Факт Водители", "в системе"),
+        active_sh=_series_by_key(series, "", "Факт Водители", "активные SH"),
+        active_trips=_series_by_key(series, "", "Факт Водители", "активные Trips"),
+    )
+
+
+def _preferred_daily_sheet(source: dict[str, Any]) -> str:
+    sheets = [sheet for sheet in source.get("sheets", []) if isinstance(sheet, dict)]
+    for preferred in ("Plan/Fact May", "Актуальный план"):
+        if any(str(sheet.get("name") or "") == preferred for sheet in sheets):
+            return preferred
+    return str(sheets[0].get("name") or "") if sheets else ""
+
+
+def _extract_daily_series(rows: list[list[Any]]) -> dict[tuple[str, str, str], tuple[DailyMetricPoint, ...]]:
+    result: dict[tuple[str, str, str], tuple[DailyMetricPoint, ...]] = {}
+    current_section = ""
+    current_block = ""
+    current_headers: list[Any] = []
+
+    for raw_row in rows:
+        row = list(raw_row)
+        section_or_block = str(row[0] if len(row) > 0 else "").strip()
+        label = str(row[1] if len(row) > 1 else "").strip()
+        tail = row[2:] if len(row) > 2 else []
+        if label and _looks_like_raw_date_header(tail):
+            current_section = label
+            current_block = ""
+            current_headers = tail
+            continue
+        if not label or not current_headers:
+            continue
+        if section_or_block:
+            current_block = section_or_block
+        points = _daily_points(current_headers, tail)
+        if points:
+            result[(_normalize_key(current_section), _normalize_key(current_block), _normalize_key(label))] = points
+    return result
+
+
+def _series_by_key(
+    series: dict[tuple[str, str, str], tuple[DailyMetricPoint, ...]],
+    section: str,
+    block: str,
+    metric: str,
+) -> tuple[DailyMetricPoint, ...]:
+    target = (_normalize_key(section), _normalize_key(block), _normalize_key(metric))
+    if target in series:
+        return series[target]
+    metric_key = _normalize_key(metric)
+    block_key = _normalize_key(block)
+    section_key = _normalize_key(section)
+    for key, points in series.items():
+        key_section, key_block, key_metric = key
+        if metric_key == key_metric and (not block_key or block_key == key_block) and (not section_key or section_key == key_section):
+            return points
+    return ()
+
+
+def _daily_points(headers: list[Any], values: list[Any]) -> tuple[DailyMetricPoint, ...]:
+    points: list[DailyMetricPoint] = []
+    for header, value in zip(headers, values):
+        number = _parse_number(str(value))
+        if number is None:
+            continue
+        day, label = _label_from_header(header)
+        points.append(DailyMetricPoint(day=day, label=label, value=number))
+    return tuple(points)
+
+
+def _label_from_header(value: Any) -> tuple[date | None, str]:
+    text = str(value or "").strip()
+    number = _parse_number(text)
+    if number is not None and 40000 <= number <= 60000:
+        day = date(1899, 12, 30) + timedelta(days=int(number))
+        return day, day.strftime("%d.%m")
+    for pattern in ("%d.%m.%Y", "%d.%m.%y", "%d.%m"):
+        try:
+            parsed = datetime.strptime(text, pattern)
+        except ValueError:
+            continue
+        year = parsed.year if pattern != "%d.%m" else date.today().year
+        day = date(year, parsed.month, parsed.day)
+        return day, day.strftime("%d.%m")
+    return None, text
+
+
+def _format_daily_country_digest(metrics: DailyCountryMetrics) -> str:
+    latest_active = _selected_daily_point(metrics.active_sh, metrics.report_date)
+    digest_date = metrics.report_date or (latest_active.day if latest_active and latest_active.day else _latest_known_date(metrics))
+    title_date = digest_date.strftime("%d.%m.%Y") if digest_date else "последняя дата в таблице"
+    lines = [f"{metrics.country}: утренняя сводка метрик за {title_date}", ""]
+
+    lines.append(_plan_fact_line("Поездки", metrics.plan_trips, metrics.fact_trips, metrics.report_date))
+    lines.append(_plan_fact_line("Заведенные водители", metrics.plan_registered, metrics.fact_registered, metrics.report_date))
+    lines.append(_active_line("Активные SH", metrics.active_sh, metrics.report_date))
+    if metrics.active_trips:
+        lines.append(_active_line("Водители с трафиком", metrics.active_trips, metrics.report_date))
+
+    lines.extend(
+        [
+            "",
+            "График ниже: поездки план/факт, заведенные водители план/факт, активные водители.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _plan_fact_line(
+    name: str,
+    plan_points: tuple[DailyMetricPoint, ...],
+    fact_points: tuple[DailyMetricPoint, ...],
+    report_date: date | None,
+) -> str:
+    fact = _selected_daily_point(fact_points, report_date)
+    plan = _point_for_same_day(plan_points, fact) or _latest_daily_point(plan_points)
+    if not fact:
+        return f"{name}: факт пока не найден."
+    if not plan:
+        return f"{name}: факт {format_metric_number(fact.value)}, план не найден."
+    delta = fact.value - plan.value
+    pct = (fact.value / plan.value * 100) if plan.value else 0
+    return (
+        f"{name}: план {format_metric_number(plan.value)}, факт {format_metric_number(fact.value)}, "
+        f"{_format_signed(delta)} ({pct:.0f}% плана)."
+    )
+
+
+def _active_line(name: str, points: tuple[DailyMetricPoint, ...], report_date: date | None) -> str:
+    latest = _selected_daily_point(points, report_date)
+    if not latest:
+        return f"{name}: данных пока нет."
+    day_delta = _delta_to_previous(points, latest)
+    week_delta = _delta_to_week_ago(points, latest)
+    return (
+        f"{name}: {format_metric_number(latest.value)}, "
+        f"день к дню {_format_signed(day_delta)}, неделя к неделе {_format_signed(week_delta)}."
+    )
+
+
+def _create_daily_country_charts(config: Config, metrics: DailyCountryMetrics) -> tuple[Path, ...]:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception as exc:  # pragma: no cover - depends on optional runtime package
+        raise MetricsUnavailable(f"Не могу построить графики ежедневной сводки: matplotlib недоступен ({exc}).") from exc
+
+    config.metrics_chart_dir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(3, 1, figsize=(11, 10), dpi=160)
+    fig.suptitle(f"{metrics.country}: основные метрики", fontsize=15, fontweight="bold")
+
+    _plot_daily_axis(axes[0], "Поездки: план / факт", (("план", metrics.plan_trips), ("факт", metrics.fact_trips)))
+    _plot_daily_axis(
+        axes[1],
+        "Заведенные водители: план / факт",
+        (("план", metrics.plan_registered), ("факт", metrics.fact_registered)),
+    )
+    _plot_daily_axis(
+        axes[2],
+        "Активные водители",
+        (("активные SH", metrics.active_sh), ("с трафиком", metrics.active_trips)),
+    )
+
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    path = config.metrics_chart_dir / f"daily_metrics_{_normalize_key(metrics.country) or uuid.uuid4().hex[:6]}_{uuid.uuid4().hex[:8]}.png"
+    fig.savefig(path)
+    plt.close(fig)
+    return (path,)
+
+
+def _plot_daily_axis(ax: Any, title: str, series: tuple[tuple[str, tuple[DailyMetricPoint, ...]], ...]) -> None:
+    for label, points in series:
+        visible_points = tuple(point for point in points[-14:] if point.value is not None)
+        if not visible_points:
+            continue
+        x_values = list(range(len(visible_points)))
+        x_labels = [point.label for point in visible_points]
+        values = [point.value for point in visible_points]
+        ax.plot(x_values, values, marker="o", linewidth=2.2, markersize=4, label=label)
+        ax.set_xticks(x_values)
+        ax.set_xticklabels(x_labels)
+    ax.set_title(title, loc="left", fontsize=11, fontweight="bold")
+    ax.grid(True, alpha=0.25)
+    ax.tick_params(axis="x", labelrotation=45, labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.legend(loc="best", fontsize=8)
+
+
+def _latest_daily_point(points: tuple[DailyMetricPoint, ...]) -> DailyMetricPoint | None:
+    return points[-1] if points else None
+
+
+def _selected_daily_point(points: tuple[DailyMetricPoint, ...], report_date: date | None) -> DailyMetricPoint | None:
+    if not points:
+        return None
+    if report_date is None:
+        return points[-1]
+    for point in reversed(points):
+        if point.day == report_date:
+            return point
+    return None
+
+
+def _point_for_same_day(
+    points: tuple[DailyMetricPoint, ...],
+    reference: DailyMetricPoint | None,
+) -> DailyMetricPoint | None:
+    if reference is None:
+        return None
+    if reference.day is not None:
+        for point in reversed(points):
+            if point.day == reference.day:
+                return point
+    for point in reversed(points):
+        if point.label == reference.label:
+            return point
+    return None
+
+
+def _delta_to_previous(points: tuple[DailyMetricPoint, ...], latest: DailyMetricPoint) -> float:
+    if len(points) < 2:
+        return 0.0
+    return latest.value - points[-2].value
+
+
+def _delta_to_week_ago(points: tuple[DailyMetricPoint, ...], latest: DailyMetricPoint) -> float:
+    if latest.day is not None:
+        week_ago = latest.day - timedelta(days=7)
+        for point in reversed(points):
+            if point.day == week_ago:
+                return latest.value - point.value
+    if len(points) >= 8:
+        return latest.value - points[-8].value
+    return 0.0
+
+
+def _latest_known_date(metrics: DailyCountryMetrics) -> date | None:
+    all_points = (
+        metrics.active_sh
+        + metrics.active_trips
+        + metrics.fact_trips
+        + metrics.fact_registered
+        + metrics.plan_trips
+        + metrics.plan_registered
+    )
+    dated = [point.day for point in all_points if point.day is not None]
+    return max(dated) if dated else None
+
+
+def _looks_like_raw_date_header(values: list[Any]) -> bool:
+    non_empty = [value for value in values if str(value or "").strip()]
+    if len(non_empty) < 3:
+        return False
+    serials: list[float] = []
+    date_strings = 0
+    for value in non_empty:
+        text = str(value).strip()
+        number = _parse_number(text)
+        if number is not None and 40000 <= number <= 60000:
+            serials.append(number)
+        elif _looks_like_date_string(text):
+            date_strings += 1
+    consecutive_serials = sum(1 for left, right in zip(serials, serials[1:]) if abs((right - left) - 1) < 0.01)
+    return date_strings >= 3 or consecutive_serials >= 2
+
+
+def _looks_like_date_string(text: str) -> bool:
+    match = re.fullmatch(r"([0-3]?\d)([/-])([01]?\d)(?:[/-]\d{2,4})?", text)
+    if match:
+        day = int(match.group(1))
+        month = int(match.group(3))
+        return 1 <= day <= 31 and 1 <= month <= 12
+    match = re.fullmatch(r"([0-3]?\d)\.([01]\d)(?:\.\d{2,4})?", text)
+    if not match:
+        return False
+    day = int(match.group(1))
+    month = int(match.group(2))
+    return 1 <= day <= 31 and 1 <= month <= 12
+
+
+def _country_label(source: dict[str, Any]) -> str:
+    explicit = str(source.get("country") or "").strip().lower()
+    labels = {
+        "belarus": "Беларусь",
+        "kyrgyzstan": "Кыргызстан",
+        "uzbekistan": "Узбекистан",
+    }
+    if explicit in labels:
+        return labels[explicit]
+    name = str(source.get("name") or "Страна").replace(" Supply", "").strip()
+    return name or "Страна"
+
+
+def _format_signed(value: float) -> str:
+    sign = "+" if value > 0 else ""
+    return f"{sign}{format_metric_number(value)}"
+
+
+def format_metric_number(value: float) -> str:
+    if abs(value - round(value)) < 0.01:
+        return f"{int(round(value)):,}".replace(",", " ")
+    return f"{value:,.1f}".replace(",", " ").replace(".", ",")
+
+
+def _normalize_key(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower().replace("ё", "е"))
 
 
 def _load_sources(path: Path) -> list[dict[str, Any]]:

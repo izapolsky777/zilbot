@@ -104,6 +104,32 @@ h2 {
   margin-bottom: 16px;
 }
 
+.country-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.country-tab {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.country-tab.is-active {
+  border-color: rgba(28, 124, 105, 0.42);
+  background: var(--green);
+  color: #ffffff;
+}
+
 .top-insights {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
@@ -298,6 +324,10 @@ h2 {
 .park-row span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.park-row--pending .park-track {
+  background: repeating-linear-gradient(90deg, #e7ebe6 0 10px, #f3f5f1 10px 20px);
 }
 
 .park-track {

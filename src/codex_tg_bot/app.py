@@ -17,7 +17,12 @@ from aiogram.types import FSInputFile, Message
 from codex_tg_bot.codex_export import export_codex_inbox, export_codex_requests
 from codex_tg_bot.config import Config, load_config
 from codex_tg_bot.extractor import extract_observations
-from codex_tg_bot.metrics import MetricsUnavailable, answer_metrics_request, is_metrics_request
+from codex_tg_bot.metrics import (
+    MetricsUnavailable,
+    answer_metrics_request,
+    build_daily_metrics_digests,
+    is_metrics_request,
+)
 from codex_tg_bot.models import Chat, Observation, Person
 from codex_tg_bot.openai_responder import OpenAIResponderError, generate_openai_answer
 from codex_tg_bot.routing import has_assignment, is_project_request
@@ -113,10 +118,30 @@ def register_handlers(dispatcher: Dispatcher, store: Store, config: Config, bot:
                     "1. Сколько поездок на 12 мая?",
                     "2. Покажи график активных водителей.",
                     "3. Какой план/факт по НикВаТакс?",
+                    "4. /metrics_digest — прислать утреннюю сводку сейчас.",
                     "",
-                    "Текущий источник: Беларусь Supply.",
+                    "Источники: Беларусь, Кыргызстан, Узбекистан.",
                 ]
             ),
+        )
+
+    @dispatcher.message(Command("metrics_digest"))
+    async def metrics_digest(message: Message) -> None:
+        if not _is_owner(message, config):
+            await _safe_answer(bot, message, "Эта команда доступна только владельцу бота.")
+            return
+
+        _remember_metrics_digest_target(store, message)
+        await _safe_answer(bot, message, "Собираю ежедневную сводку по метрикам.")
+        await _send_metrics_digest_now(
+            bot,
+            config,
+            {
+                "chat_id": message.chat.id,
+                "message_thread_id": _message_thread_id(message),
+                "direct_messages_topic_id": _direct_messages_topic_id(message),
+            },
+            _metrics_report_date(config),
         )
 
     @dispatcher.message(Command("remind"))
@@ -715,18 +740,27 @@ async def _try_auto_reply(
     export_codex_requests(store, config.codex_requests_markdown, config.codex_requests_json)
 
 
-async def _send_chunks(bot: Bot, chat_id: int, text: str, reply_to_message_id: int) -> None:
+async def _send_chunks(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    reply_to_message_id: int,
+    message_thread_id: int | None = None,
+    direct_messages_topic_id: int | None = None,
+) -> None:
     for index, chunk in enumerate(_chunk_text(text)):
         try:
             await bot.send_message(
                 chat_id=chat_id,
                 text=chunk,
                 reply_to_message_id=reply_to_message_id if index == 0 and reply_to_message_id else None,
+                message_thread_id=message_thread_id,
+                direct_messages_topic_id=direct_messages_topic_id,
             )
         except TelegramBadRequest as exc:
             if "message thread not found" not in str(exc):
                 raise
-            await bot.send_message(chat_id=chat_id, text=chunk)
+            await bot.send_message(chat_id=chat_id, text=chunk, direct_messages_topic_id=direct_messages_topic_id)
 
 
 def _chunk_text(text: str, limit: int = 3900) -> List[str]:
@@ -876,18 +910,24 @@ def _is_owner_group(rows: List, name: str, config: Config) -> bool:
 
 
 async def _scheduled_digest_loop(bot: Bot, store: Store, config: Config) -> None:
-    if not config.daily_digest_enabled or config.owner_telegram_id is None:
+    if config.owner_telegram_id is None and config.metrics_daily_digest_chat_id is None:
+        return
+    if not config.daily_digest_enabled and not config.metrics_daily_digest_enabled:
         return
 
     while True:
         try:
             await _send_due_scheduled_digests(bot, store, config)
+            await _send_due_scheduled_metrics_digests(bot, store, config)
         except Exception:
             logger.exception("Scheduled daily digest failed")
         await asyncio.sleep(30)
 
 
 async def _send_due_scheduled_digests(bot: Bot, store: Store, config: Config) -> None:
+    if not config.daily_digest_enabled or config.owner_telegram_id is None:
+        return
+
     now = _digest_now(config)
     today = now.date()
     current_minutes = now.hour * 60 + now.minute
@@ -905,6 +945,145 @@ async def _send_due_scheduled_digests(bot: Bot, store: Store, config: Config) ->
         await _send_chunks(bot, config.owner_telegram_id, text, reply_to_message_id=0)
         store.mark_scheduled_digest_sent(digest_key)
         logger.info("Sent scheduled daily digest %s", digest_key)
+
+
+async def _send_due_scheduled_metrics_digests(bot: Bot, store: Store, config: Config) -> None:
+    target = _metrics_digest_target(store, config)
+    if not config.metrics_daily_digest_enabled or target is None:
+        return
+
+    now = _digest_now(config)
+    today = now.date()
+    current_minutes = now.hour * 60 + now.minute
+
+    for digest_time in config.metrics_daily_digest_times:
+        scheduled_minutes = _parse_digest_time(digest_time)
+        if scheduled_minutes is None or not (scheduled_minutes <= current_minutes <= scheduled_minutes + 5):
+            continue
+
+        digest_key = f"metrics:{today.isoformat()}:{digest_time}"
+        if store.has_scheduled_digest_been_sent(digest_key):
+            continue
+
+        try:
+            await _send_metrics_digest_now(bot, config, target, _metrics_report_date(config))
+        except Exception as exc:
+            logger.exception("Scheduled metrics digest failed")
+            await _send_chunks(
+                bot,
+                target["chat_id"],
+                f"Не смог собрать утреннюю сводку метрик: {exc}",
+                reply_to_message_id=0,
+                message_thread_id=target.get("message_thread_id"),
+                direct_messages_topic_id=target.get("direct_messages_topic_id"),
+            )
+        store.mark_scheduled_digest_sent(digest_key)
+        logger.info("Sent scheduled metrics digest %s", digest_key)
+
+
+async def _send_metrics_digest_now(
+    bot: Bot,
+    config: Config,
+    target: Dict[str, int | None],
+    report_date: date | None = None,
+) -> None:
+    chat_id = int(target["chat_id"])
+    message_thread_id = target.get("message_thread_id")
+    direct_messages_topic_id = target.get("direct_messages_topic_id")
+    try:
+        digests = await build_daily_metrics_digests(config, report_date=report_date)
+    except MetricsUnavailable as exc:
+        await _send_chunks(
+            bot,
+            chat_id,
+            f"Метрики пока не могу прочитать: {exc}",
+            reply_to_message_id=0,
+            message_thread_id=message_thread_id,
+            direct_messages_topic_id=direct_messages_topic_id,
+        )
+        return
+
+    if not digests:
+        await _send_chunks(
+            bot,
+            chat_id,
+            "Не нашел данных для ежедневной сводки метрик.",
+            reply_to_message_id=0,
+            message_thread_id=message_thread_id,
+            direct_messages_topic_id=direct_messages_topic_id,
+        )
+        return
+
+    for digest in digests:
+        await _send_chunks(
+            bot,
+            chat_id,
+            digest.text,
+            reply_to_message_id=0,
+            message_thread_id=message_thread_id,
+            direct_messages_topic_id=direct_messages_topic_id,
+        )
+        for chart_path in digest.chart_paths:
+            if chart_path.exists():
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=FSInputFile(chart_path),
+                    message_thread_id=message_thread_id,
+                    direct_messages_topic_id=direct_messages_topic_id,
+                )
+
+
+def _metrics_report_date(config: Config) -> date:
+    return _digest_now(config).date() - timedelta(days=1)
+
+
+def _metrics_digest_target(store: Store, config: Config) -> Dict[str, int | None] | None:
+    if config.metrics_daily_digest_chat_id is not None:
+        return {
+            "chat_id": config.metrics_daily_digest_chat_id,
+            "message_thread_id": None,
+            "direct_messages_topic_id": None,
+        }
+    stored_chat_id = _int_setting(store, "metrics_digest_chat_id")
+    if stored_chat_id is not None:
+        return {
+            "chat_id": stored_chat_id,
+            "message_thread_id": _int_setting(store, "metrics_digest_message_thread_id"),
+            "direct_messages_topic_id": _int_setting(store, "metrics_digest_direct_messages_topic_id"),
+        }
+    chat_id = store.find_chat_id_by_title(config.metrics_daily_digest_chat_title)
+    if chat_id is None:
+        return None
+    return {"chat_id": chat_id, "message_thread_id": None, "direct_messages_topic_id": None}
+
+
+def _remember_metrics_digest_target(store: Store, message: Message) -> None:
+    store.set_setting("metrics_digest_chat_id", str(message.chat.id))
+    thread_id = _message_thread_id(message)
+    direct_topic_id = _direct_messages_topic_id(message)
+    store.set_setting("metrics_digest_message_thread_id", str(thread_id or ""))
+    store.set_setting("metrics_digest_direct_messages_topic_id", str(direct_topic_id or ""))
+
+
+def _message_thread_id(message: Message) -> int | None:
+    value = getattr(message, "message_thread_id", None)
+    return int(value) if value else None
+
+
+def _direct_messages_topic_id(message: Message) -> int | None:
+    topic = getattr(message, "direct_messages_topic", None)
+    value = getattr(topic, "topic_id", None) if topic else None
+    return int(value) if value else None
+
+
+def _int_setting(store: Store, key: str) -> int | None:
+    value = store.get_setting(key)
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def _format_today_digest(store: Store, config: Config, today: date) -> str:

@@ -25,6 +25,7 @@ GAME_LEADERBOARD_LIMIT = 20
 DEFAULT_METRICS_SOURCES = [
     {
         "name": "Беларусь Supply",
+        "country": "belarus",
         "spreadsheet_id": "1pMp4W1W4bz1b3QLq-HID-LzlLgm8KsD7S5Kl6fgAW2Q",
         "sheets": [
             {"name": "Актуальный план", "kind": "wide", "range": "A1:AR1003"},
@@ -32,7 +33,28 @@ DEFAULT_METRICS_SOURCES = [
             {"name": "Контрагенты", "kind": "table", "range": "A1:AC1002"},
             {"name": "Прозвон таксопарков", "kind": "notes", "range": "A1:AA1000"},
         ],
-    }
+    },
+    {
+        "name": "Кыргызстан Supply",
+        "country": "kyrgyzstan",
+        "spreadsheet_id": "1VtqI0qrPUsEdNkemge-wxdMpjtVfm3Z6I68pqbVuzkA",
+        "sheets": [
+            {"name": "Plan/Fact May", "kind": "wide", "range": "A1:AJ1000"},
+            {"name": "Plan/Fact Apr", "kind": "wide", "range": "A1:BG1000"},
+            {"name": "Парки", "kind": "table", "range": "A1:Z1004"},
+        ],
+    },
+    {
+        "name": "Узбекистан Supply",
+        "country": "uzbekistan",
+        "spreadsheet_id": "1r6nkZfCzbWIrD5dg5pUtgAMvz-8dIYdrZyvRYJesrKk",
+        "sheets": [
+            {"name": "Plan/Fact May", "kind": "wide", "range": "A1:AH1000"},
+            {"name": "Plan/Fact Apr", "kind": "wide", "range": "A1:AH1000"},
+            {"name": "Парки_Подключение", "kind": "table", "range": "A1:Z1000"},
+            {"name": "Парки_Воронка", "kind": "table", "range": "A1:Z1013"},
+        ],
+    },
 ]
 MENTION_RE = re.compile(r"(?<!\w)@([A-Za-z0-9_]{3,32})")
 DUE_PATTERNS = [

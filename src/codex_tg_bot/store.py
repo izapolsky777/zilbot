@@ -47,6 +47,39 @@ class Store:
         )
         self.conn.commit()
 
+    def find_chat_id_by_title(self, title: str) -> int | None:
+        normalized = str(title or "").strip().lower()
+        if not normalized:
+            return None
+        row = self.conn.execute(
+            """
+            select telegram_id
+            from chats
+            where lower(title) = ?
+            order by created_at desc
+            limit 1
+            """,
+            (normalized,),
+        ).fetchone()
+        return int(row["telegram_id"]) if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        self.conn.execute(
+            """
+            insert into bot_settings (key, value)
+            values (?, ?)
+            on conflict(key) do update set
+                value = excluded.value,
+                updated_at = current_timestamp
+            """,
+            (key, value),
+        )
+        self.conn.commit()
+
+    def get_setting(self, key: str) -> str | None:
+        row = self.conn.execute("select value from bot_settings where key = ?", (key,)).fetchone()
+        return str(row["value"]) if row else None
+
     def save_message(self, chat_id: int, message_id: int, sender_id: int, text: str) -> None:
         self.conn.execute(
             """
@@ -491,6 +524,12 @@ class Store:
                 person_key text not null,
                 alias text not null,
                 created_at text not null default current_timestamp
+            );
+
+            create table if not exists bot_settings (
+                key text primary key,
+                value text not null,
+                updated_at text not null default current_timestamp
             );
 
             create table if not exists dashboard_person_labels (
